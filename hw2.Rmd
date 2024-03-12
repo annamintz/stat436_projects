@@ -1,0 +1,91 @@
+---
+title: "STAT436 Homework 2"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(warnings = FALSE, message = FALSE)
+```
+
+Read in libraries and data 
+```{r}
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(plotly)
+library(slider)
+library(shiny)
+library(lubridate)
+
+drive_link = "https://drive.google.com/uc?id=1jRNrN3i25xlSVlJ67xZGUOU7ByldsBq0" # link to csv used
+tornado = read_csv(drive_link)
+```
+
+Group and Summarize Data by State and Date
+```{r}
+yearly_tornado = tornado %>% 
+  mutate(year_month = yearmonth(date)) %>% # extract month and year
+  group_by(st, year_month, yr) %>%
+  summarise(count = n()) %>% # count tornadoes by state and month of year
+  as_tsibble(index = year_month, key = st)
+```
+
+UI and Server
+ - year slider, state select, brush
+ - line plot, datatable
+```{r}
+ui = fluidPage(
+  titlePanel("Tornadoes throughout the United States"),
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("yr", "Year", 1950, 2022, c(1950, 2022), sep = ""), # build slider for year input
+      selectInput("st", "State", unique(tornado$st), tornado$st[14], multiple = TRUE),
+      "Brush over the line plot to zoom in on a region.",
+    ),
+    mainPanel(
+      plotlyOutput("lineplot"),
+      dataTableOutput("table"),
+    )
+  )
+)
+
+server = function(input, output) {
+  current_data = reactive({
+    yearly_tornado %>% 
+      filter(yr >= input$yr[1] & yr <= input$yr[2],
+             st %in% input$st) %>%
+      arrange(-count) # default most to least
+  })
+  
+  output$lineplot = renderPlotly({
+    p = ggplot(current_data(), aes(x = year_month, y = count, group = st, col = st)) + # plotly labels aren't ideal
+      geom_line(alpha = .6) +
+      labs(title = "Tornadoes throughout States by Year",
+           subtitle = "The number of tornadoes over the past seventy years",
+           x = "Date",
+           y = "Number of Tornadoes",
+           col = "State") +
+      theme_minimal()
+    ggplotly(p)
+  })
+  
+  output$table = renderDataTable({
+    tornado %>%
+      select(c('om', 'yr', 'date', 'time', 'st', 'mag', 'fat', 'loss', 'len', 'wid', 'ns')) %>% # show only these cols in table
+      filter(yr >= input$yr[1] & yr <= input$yr[2],
+             st %in% input$st) %>%  # show only the data within the years/states selected
+      arrange(date)
+  }, options = list(pageLength = 10))
+  
+}
+
+shinyApp(ui, server)
+
+```
+
+
+
+
+
+
